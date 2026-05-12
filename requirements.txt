@@ -1,0 +1,46 @@
+# Malware Prevention & Tracking System - Requirements
+# Python 3.7+
+
+# Core GUI Framework (built-in with Python)
+# tkinter is included with standard Python installation
+
+# Optional Enhancement Packages
+# Uncomment to use advanced features
+
+# For advanced process monitoring
+# psutil>=5.9.0
+
+# For network packet analysis
+# scapy>=2.4.5
+
+# For file system events
+# watchdog>=2.2.0
+
+# For machine learning detection
+# scikit-learn>=1.0.0
+# numpy>=1.20.0
+
+# For database operations
+# sqlite3  # built-in
+
+# For JSON handling
+# json  # built-in
+
+# For threading
+# threading  # built-in
+
+# For hashing
+# hashlib  # built-in
+
+# For regex
+# re  # built-in
+
+# For datetime operations
+# datetime  # built-in
+
+# For subprocess operations
+# subprocess  # built-in
+
+# For file operations
+# pathlib  # built-in
+# os  # built-in
