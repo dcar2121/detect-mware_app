@@ -1,0 +1,505 @@
+"""
+Malware Prevention System - Usage Examples & Code Snippets
+Demonstrates how to use the system programmatically and through GUI
+"""
+
+# ============================================================================
+# EXAMPLE 1: Basic File Monitoring Usage
+# ============================================================================
+
+def example_file_monitoring():
+    """Example: Monitor a directory for suspicious files"""
+    from malware_prevention_system import FileMonitor, MalwareDatabase
+    
+    # Initialize
+    db = MalwareDatabase()
+    monitor = FileMonitor(db)
+    
+    # Add paths to monitor
+    monitor.add_monitored_path("C:\\Users\\admin\\Desktop")
+    monitor.add_monitored_path("C:\\Users\\admin\\Documents")
+    
+    # Scan specific file
+    alerts = monitor.scan_file("C:\\Users\\admin\\Desktop\\suspicious.exe")
+    
+    # Process alerts
+    for alert in alerts:
+        print(f"Alert: {alert['type']}")
+        print(f"  File: {alert['file']}")
+        print(f"  Severity: {alert['severity']}")
+        print(f"  Time: {alert['time']}")
+    
+    # Scan entire directory
+    all_alerts = monitor.scan_directory("C:\\Users\\admin\\Downloads")
+    print(f"Found {len(all_alerts)} potential threats")
+
+
+# ============================================================================
+# EXAMPLE 2: Network Monitoring Usage
+# ============================================================================
+
+def example_network_monitoring():
+    """Example: Monitor network connections"""
+    from malware_prevention_system import NetworkMonitor, MalwareDatabase
+    
+    # Initialize
+    db = MalwareDatabase()
+    net_monitor = NetworkMonitor(db)
+    
+    # Add malicious IPs and domains to block
+    db.add_malicious_ip("192.168.1.100")
+    db.add_blocked_domain("malware.com")
+    
+    # Check a connection
+    ip = "192.168.1.100"
+    domain = "malware.com"
+    port = 443
+    
+    is_allowed, reason = net_monitor.check_connection(ip, domain, port)
+    print(f"Connection {ip}:{port} - Allowed: {is_allowed}, Reason: {reason}")
+    
+    # Log connection
+    net_monitor.log_connection(ip, domain, port, not is_allowed, reason)
+    
+    # Get statistics
+    stats = net_monitor.get_network_stats()
+    print(f"Network Stats: {stats}")
+
+
+# ============================================================================
+# EXAMPLE 3: Threat Signature Management
+# ============================================================================
+
+def example_threat_signatures():
+    """Example: Work with threat signatures"""
+    from malware_prevention_system import MalwareDatabase
+    
+    db = MalwareDatabase()
+    
+    # Add custom threat signatures (regex patterns)
+    suspicious_patterns = [
+        r'.*HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Run.*',
+        r'.*powershell.*-enc.*',
+        r'.*cmd\.exe.*\/c.*taskkill.*',
+        r'.*WriteProcessMemory.*',
+        r'.*CreateRemoteThread.*',
+    ]
+    
+    for pattern in suspicious_patterns:
+        db.add_threat_signature(pattern)
+        print(f"Added signature: {pattern}")
+    
+    # View signatures
+    print(f"\nTotal signatures: {len(db.signatures['trojan_patterns'])}")
+    
+    # Block infrastructure
+    db.add_malicious_ip("10.0.0.50")
+    db.add_blocked_domain("c2server.net")
+    
+    print(f"Blocked IPs: {len(db.signatures['known_malicious_ips'])}")
+    print(f"Blocked Domains: {len(db.signatures['blocked_domains'])}")
+
+
+# ============================================================================
+# EXAMPLE 4: Behavioral Analysis
+# ============================================================================
+
+def example_behavioral_analysis():
+    """Example: Detect suspicious behavior patterns"""
+    from advanced_malware_system import BehavioralAnalyzer, ThreatLevel
+    
+    analyzer = BehavioralAnalyzer()
+    
+    # Simulate suspicious behaviors
+    behaviors = [
+        ('file_enumeration', 150, 60),      # 150 files in 60 seconds - CRITICAL
+        ('registry_modification', 45, 60),  # 45 registry mods in 60 seconds - MEDIUM
+        ('process_injection', 2, 30),       # 2 injections in 30 seconds - LOW
+        ('network_scan', 25, 60),           # 25 ports in 60 seconds - HIGH
+    ]
+    
+    for behavior_type, count, timeframe in behaviors:
+        is_suspicious, severity = analyzer.analyze(behavior_type, count, timeframe)
+        print(f"{behavior_type}: {count} events in {timeframe}s")
+        print(f"  → Suspicious: {is_suspicious}, Severity: {severity}\n")
+
+
+# ============================================================================
+# EXAMPLE 5: Incident Response Management
+# ============================================================================
+
+def example_incident_response():
+    """Example: Create and handle incidents"""
+    from advanced_malware_system import IncidentResponseManager, ThreatLevel
+    
+    incident_mgr = IncidentResponseManager()
+    
+    # Create an incident
+    incident = incident_mgr.create_incident(
+        incident_type='ransomware_detected',
+        description='WannaCry-like behavior detected on workstation-5',
+        severity=ThreatLevel.CRITICAL
+    )
+    
+    print(f"Incident Created: #{incident['id']}")
+    print(f"Type: {incident['type']}")
+    print(f"Severity: {incident['severity']}")
+    print(f"Status: {incident['status']}")
+    
+    # Get response steps
+    steps = incident_mgr.get_response_steps('ransomware_detected')
+    
+    print(f"\nResponse Playbook ({len(steps)} steps):")
+    for i, step in enumerate(steps, 1):
+        print(f"  {i}. {step}")
+
+
+# ============================================================================
+# EXAMPLE 6: Endpoint Protection
+# ============================================================================
+
+def example_endpoint_protection():
+    """Example: Manage protected endpoints"""
+    from advanced_malware_system import EndpointProtectionModule, ThreatLevel
+    
+    protection = EndpointProtectionModule()
+    
+    # Register endpoints
+    endpoints = ['WORKSTATION-1', 'WORKSTATION-2', 'SERVER-PROD']
+    for endpoint in endpoints:
+        protection.register_endpoint(f"EP_{endpoint}", endpoint)
+        print(f"Registered: {endpoint}")
+    
+    # Whitelist trusted processes
+    trusted_processes = [
+        'explorer.exe',
+        'svchost.exe',
+        'lsass.exe',
+        'winlogon.exe',
+        'chrome.exe',
+        'firefox.exe',
+    ]
+    
+    for process in trusted_processes:
+        protection.add_to_whitelist(process)
+        print(f"Whitelisted: {process}")
+    
+    # Blacklist known malicious processes
+    malicious_processes = [
+        'conficker.exe',
+        'stuxnet.exe',
+        'wannacry.exe',
+        'mimikatz.exe',
+    ]
+    
+    for process in malicious_processes:
+        protection.add_to_blacklist(process)
+        print(f"Blacklisted: {process}")
+    
+    # Check processes
+    test_processes = ['explorer.exe', 'stuxnet.exe', 'unknown.exe']
+    print("\nProcess Checks:")
+    for process in test_processes:
+        is_safe, severity = protection.check_process(process)
+        print(f"  {process}: Safe={is_safe}, Severity={severity}")
+
+
+# ============================================================================
+# EXAMPLE 7: Complete Monitoring Workflow
+# ============================================================================
+
+def example_complete_workflow():
+    """Example: Complete monitoring and response workflow"""
+    from malware_prevention_system import (
+        FileMonitor, NetworkMonitor, MalwareDatabase
+    )
+    from advanced_malware_system import (
+        BehavioralAnalyzer, IncidentResponseManager
+    )
+    
+    # Initialize all components
+    print("Initializing Malware Prevention System...")
+    
+    db = MalwareDatabase()
+    file_monitor = FileMonitor(db)
+    net_monitor = NetworkMonitor(db)
+    behavioral = BehavioralAnalyzer()
+    incidents = IncidentResponseManager()
+    
+    # Step 1: Add threat intelligence
+    print("\n1. Loading threat intelligence...")
+    db.add_malicious_ip("192.168.100.50")
+    db.add_blocked_domain("botnet.cc")
+    db.add_threat_signature(r'.*ransom.*')
+    print("   ✓ Threat database updated")
+    
+    # Step 2: Configure monitoring
+    print("\n2. Configuring monitoring...")
+    file_monitor.add_monitored_path("C:\\Users\\admin\\Documents")
+    print("   ✓ File monitoring configured")
+    
+    # Step 3: Scan for threats
+    print("\n3. Scanning for threats...")
+    alerts = file_monitor.scan_directory("C:\\Users\\admin\\Documents")
+    print(f"   ✓ Found {len(alerts)} potential threats")
+    
+    # Step 4: Check network connections
+    print("\n4. Monitoring network...")
+    is_allowed, reason = net_monitor.check_connection(
+        "192.168.100.50", "botnet.cc", 443
+    )
+    print(f"   ✓ Connection blocked: {reason}")
+    
+    # Step 5: Behavioral analysis
+    print("\n5. Analyzing behavior...")
+    is_suspicious, severity = behavioral.analyze('file_enumeration', 150, 60)
+    print(f"   ✓ Suspicious behavior detected: {severity}")
+    
+    # Step 6: Create incident
+    print("\n6. Creating incident response...")
+    incident = incidents.create_incident(
+        'malware_spread',
+        'Suspicious file enumeration detected',
+        severity
+    )
+    print(f"   ✓ Incident #{incident['id']} created")
+    
+    # Step 7: Get response plan
+    print("\n7. Retrieving response plan...")
+    steps = incidents.get_response_steps('malware_spread')
+    print(f"   ✓ Response plan has {len(steps)} steps")
+    
+    print("\n" + "="*50)
+    print("Workflow complete - System secured")
+    print("="*50)
+
+
+# ============================================================================
+# EXAMPLE 8: Logging and Reporting
+# ============================================================================
+
+def example_logging_reporting():
+    """Example: Logging and generating reports"""
+    import json
+    from datetime import datetime
+    
+    # Sample log data
+    logs = {
+        'timestamp': datetime.now().isoformat(),
+        'events': [
+            {
+                'type': 'FILE_ALERT',
+                'file': 'C:\\Temp\\suspicious.exe',
+                'severity': 'HIGH',
+                'action': 'QUARANTINED'
+            },
+            {
+                'type': 'NETWORK_ALERT',
+                'ip': '192.168.1.100',
+                'domain': 'malware.com',
+                'action': 'BLOCKED'
+            },
+            {
+                'type': 'BEHAVIOR_ALERT',
+                'behavior': 'file_enumeration',
+                'severity': 'CRITICAL',
+                'action': 'INCIDENT_CREATED'
+            }
+        ],
+        'statistics': {
+            'total_alerts': 3,
+            'critical': 1,
+            'high': 1,
+            'medium': 1,
+            'threats_blocked': 5,
+            'infections_prevented': 2
+        }
+    }
+    
+    # Export logs
+    with open('security_report.json', 'w') as f:
+        json.dump(logs, f, indent=2)
+    
+    # Generate text report
+    report = f"""
+╔════════════════════════════════════════════════════════╗
+║           SECURITY MONITORING REPORT                   ║
+╚════════════════════════════════════════════════════════╝
+
+Report Generated: {logs['timestamp']}
+
+SUMMARY:
+  Total Alerts: {logs['statistics']['total_alerts']}
+  Critical: {logs['statistics']['critical']}
+  High: {logs['statistics']['high']}
+  Medium: {logs['statistics']['medium']}
+  
+  Threats Blocked: {logs['statistics']['threats_blocked']}
+  Infections Prevented: {logs['statistics']['infections_prevented']}
+
+EVENTS:
+"""
+    
+    for i, event in enumerate(logs['events'], 1):
+        report += f"\n  {i}. {event['type']}\n"
+        report += f"     Severity: {event.get('severity', 'N/A')}\n"
+        report += f"     Action: {event['action']}\n"
+    
+    print(report)
+    
+    # Save report
+    with open('security_report.txt', 'w') as f:
+        f.write(report)
+    
+    print("\nReports saved:")
+    print("  - security_report.json")
+    print("  - security_report.txt")
+
+
+# ============================================================================
+# EXAMPLE 9: Custom Configuration
+# ============================================================================
+
+def example_custom_configuration():
+    """Example: Custom security configuration"""
+    
+    # Security Policy Configuration
+    security_policy = {
+        'file_monitoring': {
+            'enabled': True,
+            'scan_interval': 300,  # 5 minutes
+            'monitored_paths': [
+                'C:\\Users\\*\\AppData',
+                'C:\\Windows\\Temp',
+                'C:\\ProgramData',
+            ],
+            'scan_nested': True,
+            'max_file_size': 100 * 1024 * 1024,  # 100MB
+            'hash_algorithm': 'SHA256',
+        },
+        'network_monitoring': {
+            'enabled': True,
+            'monitor_ports': [
+                4444, 5555, 6666, 9999, 27374, 31337
+            ],
+            'block_known_malicious': True,
+            'alert_on_anomaly': True,
+        },
+        'behavioral_analysis': {
+            'enabled': True,
+            'file_enumeration_threshold': 100,
+            'process_injection_threshold': 5,
+            'registry_modification_threshold': 50,
+        },
+        'incident_response': {
+            'auto_quarantine': True,
+            'auto_isolate': False,
+            'escalation_enabled': True,
+            'alert_soc': True,
+        },
+        'reporting': {
+            'daily_reports': True,
+            'alert_on_critical': True,
+            'log_retention': 90,  # days
+            'export_format': 'json',
+        }
+    }
+    
+    # Save configuration
+    import json
+    with open('security_config.json', 'w') as f:
+        json.dump(security_policy, f, indent=2)
+    
+    print("Security Policy Configuration:")
+    print(json.dumps(security_policy, indent=2))
+
+
+# ============================================================================
+# EXAMPLE 10: Integration with External Systems
+# ============================================================================
+
+def example_external_integration():
+    """Example: Integrate with external security systems"""
+    
+    class SIEMIntegration:
+        """Example SIEM integration"""
+        
+        def __init__(self, siem_endpoint):
+            self.siem_endpoint = siem_endpoint
+        
+        def send_alert(self, alert_data):
+            """Send alert to SIEM"""
+            # In real implementation, would use HTTP/API
+            print(f"[SIEM] Sending alert: {alert_data['type']}")
+            return True
+        
+        def query_threat_intelligence(self, indicator):
+            """Query threat intelligence"""
+            # In real implementation, would query SIEM/TI provider
+            print(f"[TI] Querying: {indicator}")
+            return {'verdict': 'malicious', 'confidence': 0.95}
+        
+        def update_correlation_rules(self, rules):
+            """Update correlation rules"""
+            print(f"[SIEM] Updated {len(rules)} correlation rules")
+    
+    # Example usage
+    siem = SIEMIntegration("https://siem.company.com/api")
+    
+    alert = {
+        'type': 'RANSOMWARE_DETECTED',
+        'severity': 'CRITICAL',
+        'source': 'WORKSTATION-5',
+        'details': 'WannaCry signature detected'
+    }
+    
+    siem.send_alert(alert)
+    
+    threat_intel = siem.query_threat_intelligence("192.168.1.100")
+    print(f"Threat Intelligence: {threat_intel}")
+
+
+# ============================================================================
+# RUN EXAMPLES
+# ============================================================================
+
+if __name__ == "__main__":
+    print("Malware Prevention System - Usage Examples\n")
+    print("="*60)
+    
+    # Uncomment examples to run:
+    
+    # print("\nExample 1: File Monitoring")
+    # example_file_monitoring()
+    
+    # print("\n\nExample 2: Network Monitoring")
+    # example_network_monitoring()
+    
+    # print("\n\nExample 3: Threat Signatures")
+    # example_threat_signatures()
+    
+    # print("\n\nExample 4: Behavioral Analysis")
+    # example_behavioral_analysis()
+    
+    # print("\n\nExample 5: Incident Response")
+    # example_incident_response()
+    
+    # print("\n\nExample 6: Endpoint Protection")
+    # example_endpoint_protection()
+    
+    # print("\n\nExample 7: Complete Workflow")
+    # example_complete_workflow()
+    
+    # print("\n\nExample 8: Logging and Reporting")
+    # example_logging_reporting()
+    
+    # print("\n\nExample 9: Custom Configuration")
+    # example_custom_configuration()
+    
+    # print("\n\nExample 10: External Integration")
+    # example_external_integration()
+    
+    print("\nTo run examples, uncomment them in the 'RUN EXAMPLES' section")
+    print("\nOr run the GUI applications:")
+    print("  python malware_prevention_system.py")
+    print("  python advanced_malware_system.py")
