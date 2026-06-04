@@ -1,0 +1,844 @@
+"""
+peggesis_main.py
+================
+Peggesis – Generative Offensive Networking (GON) Cybersecurity System
+Core detection engine: file monitoring, network monitoring, threat signature
+management, alert handling, quarantine, and incident logging.
+
+Author : Dwayne Hans
+Course : CSIA 450 – Documentation Project
+Year   : 2026
+Repo   : https://github.com/dcar2121/detectmware_app/
+"""
+
+import os
+import sys
+import threading
+import hashlib
+import socket
+import json
+import re
+import shutil
+import logging
+import time
+from datetime import datetime
+from collections import defaultdict
+from pathlib import Path
+from typing import Optional
+
+# ─── CONFIGURATION ────────────────────────────────────────────────────────────
+
+MONITORED_PATHS: list[str] = [
+    os.path.expanduser("~/Desktop"),
+    os.path.expanduser("~/Downloads"),
+    "/tmp",
+]
+
+QUARANTINE_DIR: str = os.path.expanduser("~/peggesis_quarantine")
+
+SUSPICIOUS_EXTENSIONS: set[str] = {
+    ".exe", ".bat", ".vbs", ".scr", ".pif", ".com",
+    ".hta", ".jar", ".ps1", ".cmd", ".reg",
+}
+
+SUSPICIOUS_PORTS: set[int] = {
+    4444, 5555, 6666, 9999, 27374, 31337, 1337, 8080, 6667,
+}
+
+THREAT_SIGNATURES: list[dict] = [
+    {"id": "SIG-001", "name": "WScript Shell",         "pattern": r"WScript\.Shell",       "severity": "critical"},
+    {"id": "SIG-002", "name": "PowerShell Encoded",    "pattern": r"powershell.*-enc",      "severity": "critical"},
+    {"id": "SIG-003", "name": "CMD Exec",              "pattern": r"cmd\.exe\s*/c",         "severity": "high"},
+    {"id": "SIG-004", "name": "Base64 Shellcode",      "pattern": r"[A-Za-z0-9+/]{50,}={0,2}", "severity": "medium"},
+    {"id": "SIG-005", "name": "EICAR Test String",     "pattern": r"X5O!P%@AP\[4\\PZX54\(P\^\)7CC\)7\}", "severity": "critical"},
+    {"id": "SIG-006", "name": "Reverse Shell",         "pattern": r"bash\s+-i.*>&\s*/dev/tcp", "severity": "critical"},
+    {"id": "SIG-007", "name": "Meterpreter Payload",   "pattern": r"meterpreter",           "severity": "critical"},
+    {"id": "SIG-008", "name": "Net User Add",          "pattern": r"net\s+user\s+\w+\s+\w+\s+/add", "severity": "high"},
+    {"id": "SIG-009", "name": "Registry Run Key",      "pattern": r"HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "severity": "high"},
+    {"id": "SIG-010", "name": "Scheduled Task Create", "pattern": r"schtasks.*\/create",    "severity": "high"},
+]
+
+ALERT_SEVERITY_LEVELS: list[str] = ["critical", "high", "medium", "low", "informational"]
+
+MAX_FILE_SIZE_MB: int = 50          # Skip scanning files larger than this
+SCAN_INTERVAL_SEC: float = 5.0      # How often the monitor loop polls
+LOG_FILE: str = "peggesis_incidents.log"
+REPORT_FILE: str = "peggesis_report.json"
+
+
+# ─── LOGGING ──────────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+logger = logging.getLogger("Peggesis")
+
+
+# ─── MODELS ───────────────────────────────────────────────────────────────────
+
+class ThreatEvent:
+    """Represents a single detected threat incident."""
+
+    def __init__(
+        self,
+        event_id: str,
+        event_type: str,
+        severity: str,
+        source: str,
+        description: str,
+        signature_id: Optional[str] = None,
+    ):
+        self.event_id = event_id
+        self.event_type = event_type          # "file" | "network" | "behavioral"
+        self.severity = severity
+        self.source = source                  # file path or IP:port
+        self.description = description
+        self.signature_id = signature_id
+        self.timestamp = datetime.utcnow().isoformat() + "Z"
+        self.resolved = False
+        self.response_actions: list[str] = []
+
+    def resolve(self, action: str) -> None:
+        self.resolved = True
+        self.response_actions.append(action)
+
+    def to_dict(self) -> dict:
+        return {
+            "event_id":        self.event_id,
+            "event_type":      self.event_type,
+            "severity":        self.severity,
+            "source":          self.source,
+            "description":     self.description,
+            "signature_id":    self.signature_id,
+            "timestamp":       self.timestamp,
+            "resolved":        self.resolved,
+            "response_actions": self.response_actions,
+        }
+
+    def __repr__(self) -> str:
+        return (
+            f"ThreatEvent(id={self.event_id}, type={self.event_type}, "
+            f"severity={self.severity}, source={self.source})"
+        )
+
+
+# ─── THREAT DATABASE ──────────────────────────────────────────────────────────
+
+class ThreatDatabase:
+    """
+    In-memory threat database.
+    Stores compiled signatures, known-bad hashes, and blocked IPs/domains.
+    """
+
+    def __init__(self):
+        self._signatures: list[dict] = []
+        self._bad_hashes: set[str] = set()
+        self._blocked_ips: set[str] = set()
+        self._blocked_domains: set[str] = set()
+        self._lock = threading.Lock()
+        self._load_defaults()
+
+    def _load_defaults(self) -> None:
+        for sig in THREAT_SIGNATURES:
+            self.add_signature(sig["id"], sig["name"], sig["pattern"], sig["severity"])
+
+        # Sample known-bad MD5 hashes (EICAR, common test samples)
+        self._bad_hashes.update([
+            "44d88612fea8a8f36de82e1278abb02f",  # EICAR standard
+            "69630e4574ec6798239b091cda43dca0",
+        ])
+
+        self._blocked_ips.update(["10.0.0.666", "192.168.99.99"])
+        self._blocked_domains.update(["malware-c2.example.com", "phish.bad-actor.io"])
+
+    def add_signature(self, sig_id: str, name: str, pattern: str, severity: str) -> None:
+        with self._lock:
+            try:
+                compiled = re.compile(pattern, re.IGNORECASE)
+                self._signatures.append({
+                    "id": sig_id, "name": name,
+                    "pattern": pattern, "compiled": compiled,
+                    "severity": severity,
+                })
+                logger.info(f"Signature loaded: {sig_id} – {name}")
+            except re.error as exc:
+                logger.error(f"Bad regex in signature {sig_id}: {exc}")
+
+    def match_signatures(self, content: str) -> list[dict]:
+        """Return all signatures whose pattern matches content."""
+        matches = []
+        with self._lock:
+            for sig in self._signatures:
+                if sig["compiled"].search(content):
+                    matches.append(sig)
+        return matches
+
+    def is_bad_hash(self, md5: str) -> bool:
+        return md5.lower() in self._bad_hashes
+
+    def is_blocked_ip(self, ip: str) -> bool:
+        return ip in self._blocked_ips
+
+    def is_blocked_domain(self, domain: str) -> bool:
+        return any(domain.endswith(d) for d in self._blocked_domains)
+
+    def add_bad_hash(self, md5: str) -> None:
+        with self._lock:
+            self._bad_hashes.add(md5.lower())
+
+    def block_ip(self, ip: str) -> None:
+        with self._lock:
+            self._blocked_ips.add(ip)
+
+    def get_signature_count(self) -> int:
+        return len(self._signatures)
+
+
+# ─── ALERT MANAGER ────────────────────────────────────────────────────────────
+
+class AlertManager:
+    """
+    Collects ThreatEvents, enforces severity tiers, and records incidents
+    to the log file and in-memory incident list.
+    """
+
+    def __init__(self):
+        self._incidents: list[ThreatEvent] = []
+        self._lock = threading.Lock()
+        self._event_counter = 0
+        self._callbacks: list = []          # GUI or API callbacks
+
+    def register_callback(self, fn) -> None:
+        """Register a function to be called whenever a new alert fires."""
+        self._callbacks.append(fn)
+
+    def raise_alert(self, event: ThreatEvent) -> None:
+        with self._lock:
+            self._incidents.append(event)
+            self._event_counter += 1
+
+        severity_upper = event.severity.upper()
+        logger.warning(
+            f"[{severity_upper}] {event.event_type.upper()} | "
+            f"{event.event_id} | {event.source} | {event.description}"
+        )
+
+        for cb in self._callbacks:
+            try:
+                cb(event)
+            except Exception as exc:
+                logger.error(f"Alert callback error: {exc}")
+
+    def get_incidents(self, severity: Optional[str] = None) -> list[ThreatEvent]:
+        with self._lock:
+            if severity:
+                return [e for e in self._incidents if e.severity == severity]
+            return list(self._incidents)
+
+    def get_unresolved(self) -> list[ThreatEvent]:
+        with self._lock:
+            return [e for e in self._incidents if not e.resolved]
+
+    def generate_next_id(self) -> str:
+        with self._lock:
+            self._event_counter += 1
+            return f"EVT-{self._event_counter:05d}"
+
+    def summary(self) -> dict:
+        with self._lock:
+            counts: dict[str, int] = defaultdict(int)
+            for ev in self._incidents:
+                counts[ev.severity] += 1
+            return {
+                "total":     len(self._incidents),
+                "unresolved": sum(1 for e in self._incidents if not e.resolved),
+                "by_severity": dict(counts),
+            }
+
+
+# ─── QUARANTINE ENGINE ────────────────────────────────────────────────────────
+
+class QuarantineEngine:
+    """
+    Isolates suspicious files into a locked quarantine directory.
+    Maintains a manifest for restore/review.
+    """
+
+    MANIFEST_FILE = "quarantine_manifest.json"
+
+    def __init__(self, quarantine_dir: str = QUARANTINE_DIR):
+        self.quarantine_dir = Path(quarantine_dir)
+        self.quarantine_dir.mkdir(parents=True, exist_ok=True)
+        self._manifest: list[dict] = []
+        self._lock = threading.Lock()
+        self._load_manifest()
+
+    def _load_manifest(self) -> None:
+        mf = self.quarantine_dir / self.MANIFEST_FILE
+        if mf.exists():
+            try:
+                with mf.open() as f:
+                    self._manifest = json.load(f)
+            except Exception:
+                self._manifest = []
+
+    def _save_manifest(self) -> None:
+        mf = self.quarantine_dir / self.MANIFEST_FILE
+        with mf.open("w") as f:
+            json.dump(self._manifest, f, indent=2)
+
+    def quarantine(self, filepath: str, event_id: str) -> bool:
+        """
+        Move a file into quarantine. Returns True on success.
+        The original path is recorded in the manifest for potential restore.
+        """
+        src = Path(filepath)
+        if not src.exists():
+            logger.error(f"Quarantine failed – file not found: {filepath}")
+            return False
+
+        dest_name = f"{event_id}_{src.name}"
+        dest = self.quarantine_dir / dest_name
+
+        try:
+            shutil.move(str(src), str(dest))
+        except PermissionError as exc:
+            logger.error(f"Quarantine permission denied: {exc}")
+            return False
+        except Exception as exc:
+            logger.error(f"Quarantine error: {exc}")
+            return False
+
+        entry = {
+            "event_id":      event_id,
+            "original_path": str(src),
+            "quarantine_path": str(dest),
+            "timestamp":     datetime.utcnow().isoformat() + "Z",
+        }
+        with self._lock:
+            self._manifest.append(entry)
+            self._save_manifest()
+
+        logger.info(f"Quarantined: {filepath} → {dest}")
+        return True
+
+    def restore(self, event_id: str) -> bool:
+        """Restore a quarantined file to its original location."""
+        with self._lock:
+            entry = next((e for e in self._manifest if e["event_id"] == event_id), None)
+            if not entry:
+                logger.error(f"No quarantine record for event {event_id}")
+                return False
+
+            src = Path(entry["quarantine_path"])
+            dest = Path(entry["original_path"])
+            try:
+                shutil.move(str(src), str(dest))
+                self._manifest.remove(entry)
+                self._save_manifest()
+                logger.info(f"Restored: {dest}")
+                return True
+            except Exception as exc:
+                logger.error(f"Restore error: {exc}")
+                return False
+
+    def list_quarantined(self) -> list[dict]:
+        with self._lock:
+            return list(self._manifest)
+
+
+# ─── FILE MONITOR ─────────────────────────────────────────────────────────────
+
+class FileMonitor:
+    """
+    Watches configured directories for suspicious activity:
+    – New or modified files with dangerous extensions
+    – Files matching threat signatures
+    – Files whose MD5 hash matches the known-bad list
+    """
+
+    def __init__(
+        self,
+        threat_db: ThreatDatabase,
+        alert_mgr: AlertManager,
+        quarantine: QuarantineEngine,
+        paths: list[str] = None,
+    ):
+        self.threat_db = threat_db
+        self.alert_mgr = alert_mgr
+        self.quarantine = quarantine
+        self.paths = [Path(p) for p in (paths or MONITORED_PATHS) if os.path.isdir(p)]
+        self._snapshot: dict[str, float] = {}   # path → mtime
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+
+    # ── public ──
+
+    def start(self) -> None:
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, name="FileMonitor", daemon=True)
+        self._thread.start()
+        logger.info(f"FileMonitor started. Watching {len(self.paths)} path(s).")
+
+    def stop(self) -> None:
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=10)
+        logger.info("FileMonitor stopped.")
+
+    def scan_file(self, filepath: Path) -> list[ThreatEvent]:
+        """Perform a full scan of a single file. Returns list of events raised."""
+        events: list[ThreatEvent] = []
+
+        # Skip oversized files
+        try:
+            size_mb = filepath.stat().st_size / (1024 * 1024)
+            if size_mb > MAX_FILE_SIZE_MB:
+                return events
+        except OSError:
+            return events
+
+        # 1. Extension check
+        if filepath.suffix.lower() in SUSPICIOUS_EXTENSIONS:
+            ev = ThreatEvent(
+                event_id=self.alert_mgr.generate_next_id(),
+                event_type="file",
+                severity="high",
+                source=str(filepath),
+                description=f"Suspicious extension detected: {filepath.suffix}",
+            )
+            self.alert_mgr.raise_alert(ev)
+            events.append(ev)
+
+        # 2. Hash check
+        md5 = self._md5(filepath)
+        if md5 and self.threat_db.is_bad_hash(md5):
+            ev = ThreatEvent(
+                event_id=self.alert_mgr.generate_next_id(),
+                event_type="file",
+                severity="critical",
+                source=str(filepath),
+                description=f"Known-malicious hash: {md5}",
+            )
+            self.alert_mgr.raise_alert(ev)
+            self.quarantine.quarantine(str(filepath), ev.event_id)
+            ev.resolve("quarantined")
+            events.append(ev)
+            return events                   # No further scanning after quarantine
+
+        # 3. Signature scan (text files only)
+        try:
+            content = filepath.read_text(encoding="utf-8", errors="replace")
+            matches = self.threat_db.match_signatures(content)
+            for sig in matches:
+                ev = ThreatEvent(
+                    event_id=self.alert_mgr.generate_next_id(),
+                    event_type="file",
+                    severity=sig["severity"],
+                    source=str(filepath),
+                    description=f"Signature match: {sig['name']} ({sig['id']})",
+                    signature_id=sig["id"],
+                )
+                self.alert_mgr.raise_alert(ev)
+                if sig["severity"] == "critical":
+                    self.quarantine.quarantine(str(filepath), ev.event_id)
+                    ev.resolve("quarantined")
+                events.append(ev)
+        except Exception:
+            pass
+
+        return events
+
+    def scan_directory(self, path: Path) -> int:
+        """Recursively scan a directory. Returns count of files scanned."""
+        count = 0
+        for entry in path.rglob("*"):
+            if entry.is_file():
+                self.scan_file(entry)
+                count += 1
+        return count
+
+    # ── private ──
+
+    def _loop(self) -> None:
+        """Daemon loop: detect new/modified files since last snapshot."""
+        while self._running:
+            current: dict[str, float] = {}
+            for base in self.paths:
+                try:
+                    for entry in base.rglob("*"):
+                        if entry.is_file():
+                            try:
+                                mtime = entry.stat().st_mtime
+                                current[str(entry)] = mtime
+                                if str(entry) not in self._snapshot or self._snapshot[str(entry)] != mtime:
+                                    self.scan_file(entry)
+                            except OSError:
+                                pass
+                except PermissionError:
+                    pass
+
+            self._snapshot = current
+            time.sleep(SCAN_INTERVAL_SEC)
+
+    @staticmethod
+    def _md5(filepath: Path) -> Optional[str]:
+        h = hashlib.md5()
+        try:
+            with filepath.open("rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+            return h.hexdigest()
+        except Exception:
+            return None
+
+
+# ─── NETWORK MONITOR ──────────────────────────────────────────────────────────
+
+class NetworkMonitor:
+    """
+    Monitors outbound network connections.
+    Checks destination IPs and ports against blocklists/suspicious ports.
+    Uses /proc/net/tcp (Linux) or psutil fallback for connection enumeration.
+    """
+
+    def __init__(self, threat_db: ThreatDatabase, alert_mgr: AlertManager):
+        self.threat_db = threat_db
+        self.alert_mgr = alert_mgr
+        self._seen_connections: set[str] = set()
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, name="NetworkMonitor", daemon=True)
+        self._thread.start()
+        logger.info("NetworkMonitor started.")
+
+    def stop(self) -> None:
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=10)
+        logger.info("NetworkMonitor stopped.")
+
+    def check_connection(self, ip: str, port: int) -> Optional[ThreatEvent]:
+        """Evaluate a single (ip, port) connection. Returns ThreatEvent or None."""
+        key = f"{ip}:{port}"
+        if key in self._seen_connections:
+            return None
+
+        self._seen_connections.add(key)
+
+        if self.threat_db.is_blocked_ip(ip):
+            ev = ThreatEvent(
+                event_id=self.alert_mgr.generate_next_id(),
+                event_type="network",
+                severity="critical",
+                source=key,
+                description=f"Connection to blocked IP: {ip}",
+            )
+            self.alert_mgr.raise_alert(ev)
+            return ev
+
+        if port in SUSPICIOUS_PORTS:
+            ev = ThreatEvent(
+                event_id=self.alert_mgr.generate_next_id(),
+                event_type="network",
+                severity="high",
+                source=key,
+                description=f"Connection on suspicious port {port}",
+            )
+            self.alert_mgr.raise_alert(ev)
+            return ev
+
+        return None
+
+    def resolve_and_check_domain(self, domain: str, port: int = 80) -> Optional[ThreatEvent]:
+        """Check a domain against blocklist. Resolves IP for logging."""
+        if self.threat_db.is_blocked_domain(domain):
+            ev = ThreatEvent(
+                event_id=self.alert_mgr.generate_next_id(),
+                event_type="network",
+                severity="critical",
+                source=f"{domain}:{port}",
+                description=f"Connection to blocked domain: {domain}",
+            )
+            self.alert_mgr.raise_alert(ev)
+            return ev
+        return None
+
+    # ── private ──
+
+    def _get_connections(self) -> list[tuple[str, int]]:
+        """
+        Return list of (remote_ip, remote_port) for active TCP connections.
+        Reads /proc/net/tcp on Linux; falls back to psutil if available.
+        """
+        connections: list[tuple[str, int]] = []
+
+        if sys.platform.startswith("linux"):
+            try:
+                connections.extend(self._read_proc_net_tcp())
+                return connections
+            except Exception:
+                pass
+
+        try:
+            import psutil  # type: ignore
+            for conn in psutil.net_connections(kind="tcp"):
+                if conn.raddr:
+                    connections.append((conn.raddr.ip, conn.raddr.port))
+        except ImportError:
+            pass
+        except Exception as exc:
+            logger.debug(f"psutil connection error: {exc}")
+
+        return connections
+
+    @staticmethod
+    def _read_proc_net_tcp() -> list[tuple[str, int]]:
+        """Parse /proc/net/tcp for established TCP connections."""
+        results: list[tuple[str, int]] = []
+        with open("/proc/net/tcp") as f:
+            for line in f.readlines()[1:]:
+                parts = line.strip().split()
+                if len(parts) < 4:
+                    continue
+                state = parts[3]
+                if state != "01":          # 01 = ESTABLISHED
+                    continue
+                remote_hex = parts[2]
+                ip_hex, port_hex = remote_hex.split(":")
+                # Reverse byte order for little-endian representation
+                ip_int = int(ip_hex, 16)
+                ip = socket.inet_ntoa(ip_int.to_bytes(4, "big")[::-1])
+                port = int(port_hex, 16)
+                results.append((ip, port))
+        return results
+
+    def _loop(self) -> None:
+        while self._running:
+            try:
+                for ip, port in self._get_connections():
+                    self.check_connection(ip, port)
+            except Exception as exc:
+                logger.debug(f"NetworkMonitor loop error: {exc}")
+            time.sleep(SCAN_INTERVAL_SEC)
+
+
+# ─── INCIDENT REPORTER ────────────────────────────────────────────────────────
+
+class IncidentReporter:
+    """Generates JSON and plain-text incident reports from the alert manager."""
+
+    def __init__(self, alert_mgr: AlertManager):
+        self.alert_mgr = alert_mgr
+
+    def generate_json_report(self, output_path: str = REPORT_FILE) -> str:
+        report = {
+            "report_generated":  datetime.utcnow().isoformat() + "Z",
+            "system":            "Peggesis GON v1.0",
+            "summary":           self.alert_mgr.summary(),
+            "incidents":         [e.to_dict() for e in self.alert_mgr.get_incidents()],
+        }
+        with open(output_path, "w") as f:
+            json.dump(report, f, indent=2)
+        logger.info(f"Report written to {output_path}")
+        return output_path
+
+    def generate_text_report(self) -> str:
+        lines = [
+            "=" * 70,
+            "  PEGGESIS – INCIDENT REPORT",
+            f"  Generated: {datetime.utcnow().isoformat()}Z",
+            "=" * 70,
+            "",
+        ]
+        summary = self.alert_mgr.summary()
+        lines.append(f"  Total incidents : {summary['total']}")
+        lines.append(f"  Unresolved      : {summary['unresolved']}")
+        lines.append("  By severity     :")
+        for sev in ALERT_SEVERITY_LEVELS:
+            count = summary["by_severity"].get(sev, 0)
+            lines.append(f"    {sev:<15} {count}")
+        lines.append("")
+        lines.append("-" * 70)
+        lines.append("  INCIDENT DETAILS")
+        lines.append("-" * 70)
+
+        for ev in self.alert_mgr.get_incidents():
+            lines.append(
+                f"\n  [{ev.severity.upper():10}] {ev.event_id}  {ev.timestamp}"
+            )
+            lines.append(f"  Type   : {ev.event_type}")
+            lines.append(f"  Source : {ev.source}")
+            lines.append(f"  Desc   : {ev.description}")
+            if ev.response_actions:
+                lines.append(f"  Action : {', '.join(ev.response_actions)}")
+
+        lines.append("\n" + "=" * 70)
+        return "\n".join(lines)
+
+
+# ─── PEGGESIS ENGINE (FAÇADE) ─────────────────────────────────────────────────
+
+class PeggesiEngine:
+    """
+    Top-level façade.  Assembles all sub-systems and exposes a simple
+    start / stop / scan / report API consumed by the Java middleware
+    (via subprocess JSON-RPC) and the HTML dashboard.
+    """
+
+    def __init__(self, config: Optional[dict] = None):
+        cfg = config or {}
+        self.threat_db   = ThreatDatabase()
+        self.alert_mgr   = AlertManager()
+        self.quarantine  = QuarantineEngine(cfg.get("quarantine_dir", QUARANTINE_DIR))
+        self.file_mon    = FileMonitor(
+            self.threat_db, self.alert_mgr, self.quarantine,
+            paths=cfg.get("monitored_paths", MONITORED_PATHS),
+        )
+        self.net_mon     = NetworkMonitor(self.threat_db, self.alert_mgr)
+        self.reporter    = IncidentReporter(self.alert_mgr)
+        self._active     = False
+
+    def start(self) -> None:
+        logger.info("Peggesis GON engine starting…")
+        self.file_mon.start()
+        self.net_mon.start()
+        self._active = True
+        logger.info("Peggesis GON engine running.")
+
+    def stop(self) -> None:
+        logger.info("Peggesis GON engine stopping…")
+        self.file_mon.stop()
+        self.net_mon.stop()
+        self._active = False
+        logger.info("Peggesis GON engine stopped.")
+
+    def full_scan(self) -> dict:
+        """Run a blocking full scan of all monitored paths. Returns summary."""
+        total = 0
+        for path in self.file_mon.paths:
+            total += self.file_mon.scan_directory(path)
+        return {"files_scanned": total, **self.alert_mgr.summary()}
+
+    def add_custom_signature(self, sig_id: str, name: str, pattern: str, severity: str) -> None:
+        self.threat_db.add_signature(sig_id, name, pattern, severity)
+
+    def block_ip(self, ip: str) -> None:
+        self.threat_db.block_ip(ip)
+        logger.info(f"IP blocked: {ip}")
+
+    def status(self) -> dict:
+        return {
+            "active":            self._active,
+            "signature_count":   self.threat_db.get_signature_count(),
+            "quarantine_count":  len(self.quarantine.list_quarantined()),
+            **self.alert_mgr.summary(),
+        }
+
+    def json_rpc(self, request_json: str) -> str:
+        """
+        Minimal JSON-RPC 2.0 handler so the Java middleware can call the
+        Python engine via subprocess stdin/stdout.
+        """
+        try:
+            req = json.loads(request_json)
+            method = req.get("method", "")
+            params = req.get("params", {})
+
+            if method == "start":
+                self.start()
+                result = {"ok": True}
+            elif method == "stop":
+                self.stop()
+                result = {"ok": True}
+            elif method == "status":
+                result = self.status()
+            elif method == "full_scan":
+                result = self.full_scan()
+            elif method == "report":
+                path = self.reporter.generate_json_report()
+                result = {"report_path": path}
+            elif method == "block_ip":
+                self.block_ip(params["ip"])
+                result = {"ok": True}
+            elif method == "add_signature":
+                self.add_custom_signature(
+                    params["id"], params["name"], params["pattern"], params["severity"]
+                )
+                result = {"ok": True}
+            else:
+                result = {"error": f"Unknown method: {method}"}
+
+            return json.dumps({"jsonrpc": "2.0", "id": req.get("id"), "result": result})
+
+        except Exception as exc:
+            return json.dumps({"jsonrpc": "2.0", "error": {"code": -1, "message": str(exc)}})
+
+
+# ─── ENTRY POINT ──────────────────────────────────────────────────────────────
+
+def main() -> None:
+    """
+    CLI entry point.
+    Usage:
+        python peggesis_main.py                 # start engine (Ctrl-C to stop)
+        python peggesis_main.py --scan          # one-shot full scan and report
+        python peggesis_main.py --rpc           # JSON-RPC mode (reads stdin)
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Peggesis GON Cybersecurity Engine")
+    parser.add_argument("--scan", action="store_true", help="Run full scan and exit")
+    parser.add_argument("--rpc",  action="store_true", help="JSON-RPC mode (stdin)")
+    parser.add_argument("--config", type=str, help="Path to JSON config file")
+    args = parser.parse_args()
+
+    config: dict = {}
+    if args.config:
+        with open(args.config) as f:
+            config = json.load(f)
+
+    engine = PeggesiEngine(config)
+
+    if args.rpc:
+        # Java middleware communicates via stdin/stdout JSON-RPC
+        for line in sys.stdin:
+            line = line.strip()
+            if line:
+                print(engine.json_rpc(line), flush=True)
+        return
+
+    if args.scan:
+        logger.info("Running one-shot full scan…")
+        result = engine.full_scan()
+        print(json.dumps(result, indent=2))
+        path = engine.reporter.generate_json_report()
+        print(f"\nReport saved: {path}")
+        print(engine.reporter.generate_text_report())
+        return
+
+    # Default: run continuously until Ctrl-C
+    engine.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        engine.stop()
+        engine.reporter.generate_json_report()
+        print(engine.reporter.generate_text_report())
+
+
+if __name__ == "__main__":
+    main()
