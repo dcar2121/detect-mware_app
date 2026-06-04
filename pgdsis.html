@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Peggesis GON Source Code Documentation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2em;
+            background-color: #f4f4f4;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #2980b9;
+            padding-bottom: 0.5em;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 2em;
+        }
+        pre {
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1em;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        /* Syntax highlighting colors (optional) */
+        .keyword { color: #66d9ef; }
+        .string { color: #f92672; }
+        .comment { color: #75715e; font-style: italic; }
+        .function { color: #a6e22e; }
+        .class { color: #66d9ef; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Complete Source Code Snippets for Peggesis GON</h1>
+    <h2>1. ThreatEvent Class</h2>
+    <pre><code class="language-python">
+class ThreatEvent:
+    def __init__(
+        self,
+        event_id: str,
+        event_type: str,
+        severity: str,
+        source: str,
+        description: str,
+        signature_id: Optional[str] = None,
+    ):
+        """Initialize a ThreatEvent object."""
+        self.event_id = event_id
+        self.event_type = event_type  # "file", "network", "behavioral"
+        self.severity = severity  # "critical", "high", etc.
+        self.source = source  # file path or network endpoint
+        self.description = description
+        self.signature_id = signature_id
+        self.timestamp = datetime.utcnow().isoformat() + "Z"
+        self.resolved = False
+        self.response_actions: list[str] = []
+
+    def resolve(self, action: str) -> None:
+        """Mark incident as resolved and record action."""
+        self.resolved = True
+        self.response_actions.append(action)
+
+    def to_dict(self) -> dict:
+        """Serialize incident to dictionary."""
+        return {
+            "event_id": self.event_id,
+            "event_type": self.event_type,
+            "severity": self.severity,
+            "source": self.source,
+            "description": self.description,
+            "signature_id": self.signature_id,
+            "timestamp": self.timestamp,
+            "resolved": self.resolved,
+            "response_actions": self.response_actions,
+        }
+    </code></pre>
+
+    <h2>2. ThreatDatabase Class</h2>
+    <pre><code class="language-python">
+class ThreatDatabase:
+    def __init__(self):
+        self._signatures: list[dict] = []
+        self._bad_hashes: set[str] = set()
+        self._blocked_ips: set[str] = set()
+        self._blocked_domains: set[str] = set()
+        self._lock = threading.Lock()
+        self._load_defaults()
+
+    def _load_defaults(self):
+        # Load default signatures and blocklists
+        for sig in THREAT_SIGNATURES:
+            self.add_signature(sig["id"], sig["name"], sig["pattern"], sig["severity"])
+        # Add common bad hashes
+        self._bad_hashes.update([
+            "44d88612fea8a8f36de82e1278abb02f",
+            "69630e4574ec6798239b091cda43dca0",
+        ])
+        # Add example blocklisted IPs and domains
+        self._blocked_ips.update(["10.0.0.666", "192.168.99.99"])
+        self._blocked_domains.update(["malware-c2.example.com", "phish.bad-actor.io"])
+
+    def add_signature(self, sig_id, name, pattern, severity):
+        with self._lock:
+            try:
+                compiled = re.compile(pattern, re.IGNORECASE)
+                self._signatures.append({
+                    "id": sig_id,
+                    "name": name,
+                    "pattern": pattern,
+                    "compiled": compiled,
+                    "severity": severity,
+                })
+            except re.error as e:
+                pass  # handle invalid regex
+
+    def match_signatures(self, content: str) -> list[dict]:
+        matches = []
+        with self._lock:
+            for sig in self._signatures:
+                if sig["compiled"].search(content):
+                    matches.append(sig)
+        return matches
+
+    def is_bad_hash(self, md5: str) -> bool:
+        return md5.lower() in self._bad_hashes
+
+    def is_blocked_ip(self, ip: str) -> bool:
+        return ip in self._blocked_ips
+
+    def is_blocked_domain(self, domain: str) -> bool:
+        return any(domain.endswith(d) for d in self._blocked_domains)
+    </code></pre>
+
+    <h2>3. FileMonitor Class (excerpt)</h2>
+    <pre><code class="language-python">
+class FileMonitor:
+    def __init__(self, threat_db, alert_mgr, quarantine, paths=None):
+        self.threat_db = threat_db
+        self.alert_mgr = alert_mgr
+        self.quarantine = quarantine
+        self.paths = [Path(p) for p in (paths or MONITORED_PATHS) if os.path.isdir(p)]
+        self._snapshot = {}
+        self._running = False
+        self._thread = None
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, name="FileMonitor", daemon=True)
+        self._thread.start()
+
+    def _loop(self):
+        while self._running:
+            current = {}
+            for base_path in self.paths:
+                for filepath in base_path.rglob("*"):
+                    if filepath.is_file():
+                        try:
+                            mtime = filepath.stat().st_mtime
+                            current[str(filepath)] = mtime
+                            if (str(filepath) not in self._snapshot or
+                                self._snapshot[str(filepath)] != mtime):
+                                self.scan_file(filepath)
+                        except:
+                            continue
+            self._snapshot = current
+            time.sleep(SCAN_INTERVAL_SEC)
+
+    def scan_file(self, filepath: Path) -> list:
+        events = []
+        if filepath.stat().st_size > MAX_FILE_SIZE_MB * 1024 * 1024:
+            return events
+        if filepath.suffix.lower() in SUSPICIOUS_EXTENSIONS:
+            ev = ThreatEvent(
+                event_id=self._generate_event_id(),
+                event_type="file",
+                severity="high",
+                source=str(filepath),
+                description=f"Suspicious extension: {filepath.suffix}"
+            )
+            self.alert_mgr.raise_alert(ev)
+            events.append(ev)
+        md5 = self._compute_md5(filepath)
+        if md5 and self.threat_db.is_bad_hash(md5):
+            ev = ThreatEvent(
+                event_id=self._generate_event_id(),
+                event_type="file",
+                severity="critical",
+                source=str(filepath),
+                description=f"Malicious hash detected: {md5}"
+            )
+            self.alert_mgr.raise_alert(ev)
+            self.quarantine.quarantine(str(filepath), ev.event_id)
+            ev.resolve("quarantined")
+            events.append(ev)
+            return events
+        try:
+            content = filepath.read_text(encoding='utf-8', errors='replace')
+            matches = self.threat_db.match_signatures(content)
+            for sig in matches:
+                ev = ThreatEvent(
+                    event_id=self._generate_event_id(),
+                    event_type="file",
+                    severity=sig["severity"],
+                    source=str(filepath),
+                    description=f"Signature match: {sig['name']} ({sig['id']})",
+                    signature_id=sig["id"]
+                )
+                self.alert_mgr.raise_alert(ev)
+                if sig["severity"] == "critical":
+                    self.quarantine.quarantine(str(filepath), ev.event_id)
+                    ev.resolve("quarantined")
+                events.append(ev)
+        except:
+            pass
+        return events
+    </code></pre>
+
+    <h2>4. Main Script Entry Point</h2>
+    <pre><code class="language-python">
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Peggesis GON Cybersecurity Engine")
+    parser.add_argument("--scan", action="store_true", help="Run full scan")
+    parser.add_argument("--rpc", action="store_true", help="Run in RPC mode")
+    parser.add_argument("--config", type=str, help="Config file path")
+    args = parser.parse_args()
+
+    config = {}
+    if args.config:
+        with open(args.config) as f:
+            config = json.load(f)
+
+    engine = PeggesiEngine(config)
+
+    if args.rpc:
+        for line in sys.stdin:
+            line = line.strip()
+            if line:
+                print(engine.json_rpc(line), flush=True)
+        return
+
+    if args.scan:
+        print("Running full scan...")
+        result = engine.full_scan()
+        print(json.dumps(result, indent=2))
+        report_path = engine.reporter.generate_json_report()
+        print(f"Report saved at: {report_path}")
+        print(engine.reporter.generate_text_report())
+        return
+
+    engine.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        engine.stop()
+        engine.reporter.generate_json_report()
+        print(engine.reporter.generate_text_report())
+
+if __name__ == "__main__":
+    main()
+    </code></pre>
+
+    <h2>5. IncidentReporter Class</h2>
+    <pre><code class="language-python">
+class IncidentReporter:
+    def __init__(self, alert_mgr):
+        self.alert_mgr = alert_mgr
+
+    def generate_json_report(self, output_path=REPORT_FILE):
+        report = {
+            "report_generated": datetime.utcnow().isoformat() + "Z",
+            "system": "Peggesis GON v1.0",
+            "summary": self.alert_mgr.summary(),
+            "incidents": [e.to_dict() for e in self.alert_mgr.get_incidents()],
+        }
+        with open(output_path, "w") as f:
+            json.dump(report, f, indent=2)
+        return output_path
+
+    def generate_text_report(self):
+        lines = [
+            "="*70,
+            "  PEGGESIS – INCIDENT REPORT",
+            f"  Generated: {datetime.utcnow().isoformat()}Z",
+            "="*70,
+            "",
+        ]
+        summary = self.alert_mgr.summary()
+        lines.append(f"  Total incidents : {summary['total']}")
+        lines.append(f"  Unresolved      : {summary['unresolved']}")
+        lines.append("  By severity     :")
+        for sev in ALERT_SEVERITY_LEVELS:
+            count = summary["by_severity"].get(sev, 0)
+            lines.append(f"    {sev:<15} {count}")
+        lines.append("")
+        lines.append("-"*70)
+        lines.append("  INCIDENT DETAILS")
+        lines.append("-"*70)
+        for e in self.alert_mgr.get_incidents():
+            lines.append(f"\n  [{e.severity.upper():10}] {e.event_id}  {e.timestamp}")
+            lines.append(f"  Type   : {e.event_type}")
+            lines.append(f"  Source : {e.source}")
+            lines.append(f"  Desc   : {e.description}")
+            if e.response_actions:
+                lines.append(f"  Action : {', '.join(e.response_actions)}")
+        lines.append("\n" + "="*70)
+        return "\n".join(lines)
+    </code></pre>
+</body>
+</html>
