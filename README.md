@@ -2,7 +2,7 @@
 
 A comprehensive cybersecurity solution with GUI for preventing, detecting, and tracking malware spread on systems and networks.
 
-## Features
+## Features  
 
 ### Core System (`malware_prevention_system.py`)
 
