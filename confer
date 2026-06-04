@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Peggesis GON Cyberpunk Dashboard</title>
+<!-- Google Fonts for sci-fi aesthetic -->
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+<style>
+  /* Reset and base styles */
+  body {
+    margin: 0;
+    padding: 20px;
+    background-color: #0d0d0d;
+    font-family: 'Share Tech Mono', monospace;
+    color: #00fff7;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  /* Neon glow headers */
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 3em;
+    text-align: center;
+    color: #ff00f7;
+    text-shadow: 0 0 10px #ff00f7, 0 0 20px #ff00f7, 0 0 40px #ff00f7;
+    margin-bottom: 0.3em;
+  }
+  h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2em;
+    margin-top: 2em;
+    margin-bottom: 0.5em;
+    color: #00ffe7;
+    text-shadow: 0 0 8px #00ffe7, 0 0 16px #00ffe7, 0 0 32px #00ffe7;
+  }
+  /* Sections styling */
+  section {
+    margin-top: 3em;
+    padding: 20px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #1a1a1a, #111);
+    box-shadow: inset 0 0 20px #222, 0 0 40px #000;
+  }
+  /* Section Titles with glow */
+  .section-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2em;
+    margin-bottom: 1em;
+    color: #ff00f7;
+    text-shadow: 0 0 10px #ff00f7, 0 0 20px #ff00f7;
+    border-bottom: 2px solid #ff00f7;
+    padding-bottom: 0.2em;
+  }
+  /* Button styles */
+  .btn {
+    display: inline-block;
+    padding: 0.8em 1.8em;
+    margin: 1em 0.5em;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.1em;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 0 15px #0ff, inset 0 0 10px #0ff;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #ff00f7, #00ffe7);
+    color: #000;
+  }
+  .btn-primary:hover {
+    box-shadow: 0 0 25px #ff00f7, inset 0 0 20px #00ffe7;
+  }
+  .btn-secondary {
+    background-color: #222;
+    color: #00ffe7;
+    border: 2px solid #00ffe7;
+  }
+  .btn-secondary:hover {
+    background-color: #333;
+    box-shadow: inset 0 0 15px #00ffe7;
+  }
+  /* Tables for system data */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1.5em;
+  }
+  th {
+    background: #222;
+    color: #0ff;
+    padding: 10px;
+    border-bottom: 2px solid #0ff;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1em;
+    text-shadow: 0 0 5px #0ff, 0 0 10px #0ff;
+  }
+  td {
+    padding: 10px;
+    border-bottom: 1px solid #222;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.95em;
+  }
+  tr:hover {
+    background-color: #111;
+    box-shadow: inset 0 0 10px #0ff;
+  }
+  /* Neon status indicators */
+  .status-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+    box-shadow: 0 0 10px #0ff, 0 0 20px #0ff;
+  }
+  /* Footer with winged cyber horse motif */
+  footer {
+    margin-top: 4em;
+    text-align: center;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.4em;
+    color: #ff00f7;
+    text-shadow: 0 0 10px #ff00f7, 0 0 20px #ff00f7;
+  }
+  /* Cyber horse SVG animation */
+  .cyber-horse {
+    display: block;
+    margin: 20px auto;
+    width: 250px;
+    height: auto;
+    animation: glow 2s infinite alternate;
+  }
+  @keyframes glow {
+    from { filter: drop-shadow(0 0 10px #ff00f7); }
+    to { filter: drop-shadow(0 0 20px #ff00f7); }
+  }
+</style>
+</head>
+<body>
+
+<h1>Peggesis GON + Peggy PCI</h1>
+<p style="text-align:center; font-family: 'Share Tech Mono', monospace; font-size: 1.4em; margin-top: 0;">
+  <em>Cyberpunk Security System with Wings & Winged Horse Motif</em>
+</p>
+
+<!-- Overview Section -->
+<section>
+  <div class="section-title">Overview</div>
+  <p>Welcome to the <strong>Cyberpunk Generative Offensive Networking System</strong>. This high-tech dashboard monitors files, network activity, threat signatures, and incident logs, wrapped in a neon, futuristic interface.</p>
+  <p><strong>Features include:</strong></p>
+  <ul>
+    <li>Real-time file and network monitoring</li>
+    <li>Threat signature management</li>
+    <li>Alert handling & incident logging</li>
+    <li>Quarantine and restore capabilities</li>
+    <li>JSON and text incident reports</li>
+  </ul>
+  <p>Run with:</p>
+  <code>python peggesis_main.py</code>
+  <p>Ensure sibling modules are present.</p>
+  <p style="text-align: right;">Author: <strong>Dwayne Hans</strong></p>
+  <p style="text-align: right;">Course: <strong>CSIA 450 – Documentation Project</strong></p>
+  <p style="text-align: right;">Year: <strong>2026</strong></p>
+</section>
+
+<!-- Cyberpunk Winged Horse Illustration -->
+<section>
+  <div class="section-title">Cyberpunk Winged Horse</div>
+  <!-- SVG of a neon-winged cyber horse -->
+  <svg class="cyber-horse" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#ff00f7"/>
+        <stop offset="100%" stop-color="#00ffe7"/>
+      </linearGradient>
+    </defs>
+    <g fill="none" stroke="url(#glow)" stroke-width="4">
+      <!-- Body of horse -->
+      <path d="M256,50 C300,20 340,80 300,120 C340,160 300,200 256,170 C212,200 220,160 256,120" />
+      <!-- Wings -->
+      <path d="M180,100 Q160,80 140,100 Q160,120 180,100" />
+      <path d="M332,100 Q352,80 372,100 Q352,120 332,100" />
+      <!-- Legs -->
+      <path d="M240,200 L230,250" />
+      <path d="M272,200 L282,250" />
+    </g>
+  </svg>
+  <p style="text-align:center; font-family: 'Share Tech Mono', monospace; font-size: 1.2em; color: #ff00f7;">
+    Soaring neon wings—speed, power, and agility in a digital universe.
+  </p>
+</section>
+
+<!-- Monitoring & Control Modules -->
+<section>
+  <div class="section-title">System Modules</div>
+  <h2>Status & Controls</h2>
+  <table>
+    <tr>
+      <th>Component</th>
+      <th>Status</th>
+      <th>Details</th>
+    </tr>
+    <tr>
+      <td>Threat Detection Engine</td>
+      <td><div class="status-indicator" style="box-shadow: 0 0 20px #0ff;"></div>Running</td>
+      <td>Monitoring files, network, signatures</td>
+    </tr>
+    <tr>
+      <td>File Monitor</td>
+      <td><div class="status-indicator" style="background-color:#0f0; box-shadow: 0 0 20px #0f0;"></div>Active</td>
+      <td>Real-time file scanning</td>
+    </tr>
+    <tr>
+      <td>Network Monitor</td>
+      <td><div class="status-indicator" style="background-color:#ff0; box-shadow: 0 0 20px #ff0;"></div>Active</td>
+      <td>Outbound connection analysis</td>
+    </tr>
+    <tr>
+      <td>Alert System</td>
+      <td><div class="status-indicator" style="background-color:#f00; box-shadow: 0 0 20px #f00;"></div>Operational</td>
+      <td>Real-time incident alerts</td>
+    </tr>
+  </table>
+  <button class="btn btn-primary" onclick="startEngine()">Start All</button>
+  <button class="btn btn-secondary" onclick="stopEngine()">Stop All</button>
+</section>
+
+<!-- Threat Incidents & Logs -->
+<section>
+  <div class="section-title">Threat Incidents & Logs</div>
+  <h2>Recent Threats</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Type</th><th>Severity</th><th>Source</th><th>Description</th><th>Time</th>
+      </tr>
+    </thead>
+    <tbody id="incident-log">
+      <!-- Dynamic entries here -->
+    </tbody>
+  </table>
+  <button class="btn btn-primary" onclick="generateReport()">Generate JSON Report</button>
+  <button class="btn btn-secondary" onclick="generateTextReport()">Generate Text Report</button>
+</section>
+
+<!-- Quarantine Management -->
+<section>
+  <div class="section-title">Quarantine Management</div>
+  <h2>Quarantined Files</h2>
+  <table>
+    <thead>
+      <tr><th>Event ID</th><th>Original Path</th><th>Quarantine Path</th><th>Timestamp</th></tr>
+    </thead>
+    <tbody id="quarantine-list">
+      <!-- Dynamic entries -->
+    </tbody>
+  </table>
+  <button class="btn btn-secondary" onclick="restoreSelected()">Restore Selected</button>
+</section>
+
+<!-- Signature Management -->
+<section>
+  <div class="section-title">Threat Signatures</div>
+  <h2>Signature Rules</h2>
+  <form id="signature-form">
+    <input type="text" placeholder="ID" id="sig-id" required />
+    <input type="text" placeholder="Name" id="sig-name" required />
+    <input type="text" placeholder="Pattern" id="sig-pattern" required />
+    <select id="sig-severity">
+      <option value="critical">Critical</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+      <option value="informational">Informational</option>
+    </select>
+    <button type="submit" class="btn btn-primary">Add Signature</button>
+  </form>
+  <h3>Existing Signatures</h3>
+  <ul id="signature-list"></ul>
+</section>
+
+<!-- Footer with winged cyber horse -->
+<footer>
+  <svg class="cyber-horse" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="glow" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#ff00f7"/>
+        <stop offset="100%" stop-color="#00ffe7"/>
+      </linearGradient>
+    </defs>
+    <g fill="none" stroke="url(#glow)" stroke-width="4">
+      <!-- Body -->
+      <path d="M256,50 C300,20 340,80 300,120 C340,160 300,200 256,170 C212,200 220,160 256,120" />
+      <!-- Wings -->
+      <path d="M180,100 Q160,80 140,100 Q160,120 180,100" />
+      <path d="M332,100 Q352,80 372,100 Q352,120 332,100" />
+      <!-- Legs -->
+      <path d="M240,200 L230,250" />
+      <path d="M272,200 L282,250" />
+    </g>
+  </svg>
+  <p>🚀 Soar through neon skies with your cyber horse wings! 🐎🦅</p>
+</footer>
+
+<!-- Scripts for interactions -->
+<script>
+  function startEngine() {
+    alert('Starting all modules...');
+    // Implement actual start logic via API calls
+  }
+  function stopEngine() {
+    alert('Stopping all modules...');
+    // Implement stop logic
+  }
+  function generateReport() {
+    alert('Generating JSON report...');
+    // Trigger report API
+  }
+  function generateTextReport() {
+    alert('Generating Text report...');
+    // Trigger report API
+  }
+  function restoreSelected() {
+    alert('Restoring selected file...');
+    // Implement restore logic
+  }
+
+  // Placeholder: dynamically populate logs and signatures
+  document.getElementById('signature-list').innerHTML = `
+    <li>Sig-001: WScript Shell (Critical)</li>
+    <li>Sig-002: PowerShell Encoded (Critical)</li>
+  `;
+  // Example: populate recent incidents
+  const incidentBody = document.getElementById('incident-log');
+  incidentBody.innerHTML = `
+    <tr><td>EVT-00001</td><td>file</td><td style="color:red;">Critical</td><td>/path/to/file.exe</td><td>Detected malicious signature</td><td>2026-01-01 12:00:00</td></tr>
+    <tr><td>EVT-00002</td><td>network</td><td style="color:orange;">High</td><td>192.168.1.100:4444</td><td>Blocked IP connection</td><td>2026-01-01 12:05:00</td></tr>
+  `;
+  // Similarly, populate quarantine list
+  document.getElementById('quarantine-list').innerHTML = `
+    <tr><td>EVT-00005</td><td>/user/download/file.exe</td><td>/quarantine/EVT-00005_file.exe</td><td>2026-01-01T12:10:00Z</td></tr>
+  `;
+</script>
+
+</body>
+</html>
